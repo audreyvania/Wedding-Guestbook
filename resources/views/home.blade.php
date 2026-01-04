@@ -235,14 +235,24 @@
                                 @endif
                             </td>
                             <td>
-                                <a href="#" class="btn btn-2">
+                                <!-- Tombol Edit -->
+                                <a href="{{ route('guests.edit', $guest->id) }}" class="btn btn-2">
                                     <i class="bi bi-pencil-square"></i> Edit
                                 </a>
 
-                                <a href="#" class="btn btn-3">
-                                    <i class="bi bi-trash"></i> Delete
-                                </a>
+                                <!-- Tombol Delete -->
+                                <form action="{{ route('guests.destroy', $guest->id) }}" method="POST"
+                                    style="display:inline-block;"
+                                    onsubmit="return confirm('Are you sure you want to delete this guest?');">
+                                    @csrf
+                                    @method('DELETE')
+                                    <button type="submit" class="btn btn-3">
+                                        <i class="bi bi-trash"></i> Delete
+                                    </button>
+
+                                </form>
                             </td>
+
                         </tr>
                     @endforeach
                 </tbody>
@@ -254,6 +264,69 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Modal untuk pilih number of guest -->
+<div class="modal fade" id="attendModal" tabindex="-1" aria-hidden="true">
+  ...
+</div>
+
+<!-- Script AJAX -->
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const searchInput = document.querySelector('input[name="search"]');
+    let selectedGuestId = null;
+
+    searchInput.addEventListener('keyup', function() {
+        const query = this.value;
+
+        if (query.length < 2) return; // minimal 2 huruf
+        fetch(`/guests/search?q=${query}`)
+            .then(res => res.json())
+            .then(data => {
+                let list = '';
+                data.forEach(g => {
+                    list += `<li class="list-group-item list-group-item-action" data-id="${g.id}">${g.guest_name}</li>`;
+                });
+                let dropdown = document.getElementById('searchDropdown');
+                if (!dropdown) {
+                    dropdown = document.createElement('ul');
+                    dropdown.id = 'searchDropdown';
+                    dropdown.className = 'list-group position-absolute w-100';
+                    searchInput.parentNode.appendChild(dropdown);
+                }
+                dropdown.innerHTML = list;
+
+                // klik guest
+                dropdown.querySelectorAll('li').forEach(li => {
+                    li.addEventListener('click', function() {
+                        selectedGuestId = this.dataset.id;
+                        document.getElementById('modal_guest_id').value = selectedGuestId;
+                        const modal = new bootstrap.Modal(document.getElementById('attendModal'));
+                        modal.show();
+                        dropdown.innerHTML = '';
+                    });
+                });
+            });
+    });
+
+    // submit modal form
+    document.getElementById('attendForm').addEventListener('submit', function(e){
+        e.preventDefault();
+        const formData = new FormData(this);
+        fetch('{{ route("guests.attend") }}', {
+            method: 'POST',
+            headers: {'X-CSRF-TOKEN': '{{ csrf_token() }}'},
+            body: formData
+        }).then(res => res.json())
+          .then(data => {
+              if(data.success){
+                  location.reload(); // reload halaman setelah update status
+              }
+          });
+    });
+});
+</script>
+
 </body>
 
 </html>

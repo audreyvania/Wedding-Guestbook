@@ -10,18 +10,18 @@ return new class extends Migration
      * Run the migrations.
      */
     public function up(): void
-    {
-        Schema::create('guests', function (Blueprint $table) {
-            $table->id();
-            $table->timestamps();
-        });
-    }
+{
+    Schema::create('tamu_undangan', function (Blueprint $table) {
+        $table->id();
+        $table->string('nama');
+        $table->string('status')->default('Pending');
+        $table->timestamps();
+    });
+}
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
-    {
-        Schema::dropIfExists('guests');
-    }
+public function down(): void
+{
+    Schema::dropIfExists('tamu_undangan');
+}
+
 };

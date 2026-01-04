@@ -11,7 +11,7 @@
 
     <style>
         body {
-            background: url('{{ asset("img/MONO0390.jpg") }}') no-repeat center center fixed;
+            background: url('{{ asset("img/MONO03907.jpg") }}') no-repeat center center fixed;
             background-size: cover;
         }
 
