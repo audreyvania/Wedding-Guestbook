@@ -13,8 +13,10 @@ return new class extends Migration
 {
     Schema::create('tamu_undangan', function (Blueprint $table) {
         $table->id();
-        $table->string('nama');
-        $table->string('status')->default('Pending');
+        $table->string('guest_name');
+        $table->integer('number_of_guest')->default(1);
+        $table->dateTime('check_in_time')->nullable();
+        $table->enum('status', ['Attended', 'Absent'])->default('Absent');
         $table->timestamps();
     });
 }
@@ -23,5 +25,6 @@ public function down(): void
 {
     Schema::dropIfExists('tamu_undangan');
 }
+
 
 };

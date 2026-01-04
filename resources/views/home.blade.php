@@ -208,7 +208,10 @@
     <div class="container mb-5">
         <div class="d-flex justify-content-between mb-3">
             <a href="#" class="btn btn-1">Export PDF</a>
-            <a href="#" class="btn btn-success">+ Add New Guest</a>
+            <a href="{{ route('guests.create') }}" class="btn btn-success">
+    + Add New Guest
+</a>
+
         </div>
         <div class="table-responsive">
             <table class="table table-bordered align-middle text-center">

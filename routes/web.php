@@ -25,3 +25,6 @@ Route::post('/scan', [QRCodeController::class, 'scan']);
 Route::resource('guests', TamuUndanganController::class);
 Route::get('/guests/search', [TamuUndanganController::class, 'search'])->name('guests.search');
 Route::post('/guests/attend', [TamuUndanganController::class, 'attend'])->name('guests.attend');
+
+Route::patch('/guests/{id}/checkin', [TamuUndanganController::class, 'checkIn'])
+    ->name('guests.checkin');
