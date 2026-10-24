@@ -1,30 +1,42 @@
 <?php
 
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CheckInController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\GuestController;
+use App\Http\Controllers\QrExportController;
 use Illuminate\Support\Facades\Route;
-use App\Models\TamuUndangan;
-use App\Http\Controllers\QRCodeController;
-use App\Http\Controllers\TamuUndanganController;
 
+Route::view('/login', 'app')->middleware('guest')->name('login');
+Route::post('/login', [AuthController::class, 'login'])->middleware('guest');
 
-
-Route::get('/', function () {
-    $guests = TamuUndangan::paginate(10); // pagination
-    $total = TamuUndangan::count();
-    $attended = TamuUndangan::where('status', 'Attended')->count();
-    $absent = TamuUndangan::where('status', 'Absent')->count();
-
-    
-    return view('home', compact('guests', 'total', 'attended', 'absent'));
+Route::middleware('auth')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/api/user', [AuthController::class, 'user']);
 });
 
-Route::get('/qr-scanner', [QRCodeController::class, 'index']);
-Route::post('/scan', [QRCodeController::class, 'scan']);
+Route::middleware(['auth', 'role:admin'])->group(function () {
+    Route::get('/', fn () => view('app'));
+    Route::view('/guests', 'app');
 
+    Route::prefix('api')->group(function () {
+        Route::apiResource('guests', GuestController::class);
+        Route::get('/guests/{guest}/qr', [QrExportController::class, 'png']);
+        Route::get('/qr-sheet.pdf', [QrExportController::class, 'invitationSheet']);
+        Route::get('/reports.csv', [QrExportController::class, 'csv']);
+        Route::get('/reports.pdf', [QrExportController::class, 'attendanceReport']);
+    });
+});
 
-// Route resource untuk tamu undangan
-Route::resource('guests', TamuUndanganController::class);
-Route::get('/guests/search', [TamuUndanganController::class, 'search'])->name('guests.search');
-Route::post('/guests/attend', [TamuUndanganController::class, 'attend'])->name('guests.attend');
+Route::middleware(['auth', 'role:admin,receptionist'])->group(function () {
+    Route::get('/api/dashboard', DashboardController::class);
+    Route::view('/scanner', 'app');
+    Route::get('/api/check-in/search', [CheckInController::class, 'search']);
+    Route::post('/api/check-in/lookup', [CheckInController::class, 'lookup']);
+    Route::post('/api/check-in', [CheckInController::class, 'confirm']);
+});
 
-Route::patch('/guests/{id}/checkin', [TamuUndanganController::class, 'checkIn'])
-    ->name('guests.checkin');
+Route::middleware(['auth', 'role:receptionist'])->group(function () {
+    Route::view('/reception', 'app');
+    Route::get('/api/reception/guests', [GuestController::class, 'index']);
+});
