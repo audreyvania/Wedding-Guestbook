@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import express from 'express';
-import session from 'express-session';
+import cookieSession from 'cookie-session';
 import mysql from 'mysql2/promise';
 import PDFDocument from 'pdfkit';
 import QRCode from 'qrcode';
@@ -12,7 +12,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
-const app = express();
+export const app = express();
+const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? null : 'replace-this-session-secret');
+if (!sessionSecret) throw new Error('SESSION_SECRET wajib diatur pada deployment production.');
 const db = mysql.createPool({ host: process.env.DB_HOST || '127.0.0.1', port: Number(process.env.DB_PORT || 3306), user: process.env.DB_USERNAME || 'root', password: process.env.DB_PASSWORD || '', database: process.env.DB_DATABASE || 'wedding_guestbook', waitForConnections: true });
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const user = ({ id, name, email, role }) => ({ id, name, email, role });
@@ -80,7 +82,14 @@ async function initialise() {
 await initialise();
 
 app.use(express.json({ limit: '2mb' }));
-app.use(session({ secret: process.env.SESSION_SECRET || 'replace-this-session-secret', resave: false, saveUninitialized: false, cookie: { maxAge: 7_200_000 } }));
+app.use(cookieSession({
+    name: 'wedding_guestbook_session',
+    keys: [sessionSecret],
+    maxAge: 7_200_000,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+}));
 app.get('/api/public/settings', wrap(async (_req, res) => { const [[settings]] = await db.query('SELECT groom_name,bride_name,primary_color,accent_color FROM event_settings WHERE id=1'); res.json(settings); }));
 app.post('/login', wrap(async (req, res) => {
     const email = text(req.body.email), password = text(req.body.password);
@@ -89,7 +98,7 @@ app.post('/login', wrap(async (req, res) => {
     if (!rows[0] || !(await bcrypt.compare(password, rows[0].password))) return res.status(422).json({ message: 'Email atau kata sandi tidak valid.' });
     req.session.user = user(rows[0]); res.json({ user: req.session.user });
 }));
-app.post('/logout', auth, (req, res) => req.session.destroy(() => res.json({ message: 'Anda telah keluar.' })));
+app.post('/logout', auth, (req, res) => { req.session = null; res.json({ message: 'Anda telah keluar.' }); });
 app.get('/api/user', auth, (req, res) => res.json(req.session.user));
 app.get('/api/developer/settings', auth, role('developer'), wrap(async (_req, res) => { const [[settings]] = await db.query('SELECT groom_name,bride_name,primary_color,accent_color FROM event_settings WHERE id=1'); res.json(settings); }));
 app.put('/api/developer/settings', auth, role('developer'), wrap(async (req, res) => {
@@ -178,5 +187,11 @@ app.get('/api/reports.csv', auth, role('admin'), wrap(async (_req, res) => { res
 app.get('/api/reports.pdf', auth, role('admin'), wrap(async (_req, res) => { const guests = await allGuests('check_in_time DESC'); pdf(res, 'rekap-kehadiran.pdf', doc => { doc.fillColor('#8c3d61').fontSize(22).text('Rekap Kehadiran').moveDown(); doc.fillColor('#30242d').fontSize(10); guests.forEach(g => doc.text(`${g.guest_name}  |  ${g.category}  |  ${g.status}  |  ${g.check_in_time || '-'}`).moveDown(.45)); }); }));
 app.get('/api/qr-sheet.pdf', auth, role('admin'), wrap(async (_req, res) => { const guests = await allGuests(), codes = await Promise.all(guests.map(g => QRCode.toDataURL(g.qr_token, { width: 150, margin: 1 }))); pdf(res, 'qr-undangan.pdf', doc => { doc.fillColor('#8c3d61').fontSize(20).text('Wedding Guestbook — Kartu QR Undangan'); guests.forEach((g, i) => { if (i && i % 6 === 0) doc.addPage(); const y = 75 + (i % 6) * 115; doc.image(Buffer.from(codes[i].split(',')[1], 'base64'), 46, y, { width: 88 }); doc.fillColor('#30242d').fontSize(13).text(g.guest_name, 150, y + 22).fontSize(10).text(g.category, 150, y + 44); }); }); }));
 
-const dist = join(root, 'dist'); app.use(express.static(existsSync(dist) ? dist : join(root, 'public'))); app.get('/{*splat}', (_req, res) => existsSync(join(dist, 'index.html')) ? res.sendFile(join(dist, 'index.html')) : res.status(503).send('Frontend belum dibangun. Jalankan npm run build atau npm run dev.')); app.use((error, _req, res, _next) => { console.error(error); res.status(error.status || 500).json({ message: error.message || 'Terjadi kesalahan pada server.' }); });
-app.listen(Number(process.env.PORT || 3000), () => console.log(`Wedding Guestbook berjalan di http://localhost:${process.env.PORT || 3000}`));
+if (!process.env.NETLIFY && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+    const dist = join(root, 'dist');
+    app.use(express.static(existsSync(dist) ? dist : join(root, 'public')));
+    app.get('/{*splat}', (_req, res) => existsSync(join(dist, 'index.html')) ? res.sendFile(join(dist, 'index.html')) : res.status(503).send('Frontend belum dibangun. Jalankan npm run build atau npm run dev.'));
+}
+app.use((error, _req, res, _next) => { console.error(error); res.status(error.status || 500).json({ message: error.message || 'Terjadi kesalahan pada server.' }); });
+
+if (!process.env.NETLIFY && !process.env.AWS_LAMBDA_FUNCTION_NAME) app.listen(Number(process.env.PORT || 3000), () => console.log(`Wedding Guestbook berjalan di http://localhost:${process.env.PORT || 3000}`));

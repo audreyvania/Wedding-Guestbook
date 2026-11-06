@@ -1,0 +1,34 @@
+[build]
+  command = "npm ci && npm run build"
+  publish = "dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NODE_ENV = "production"
+
+[functions]
+  included_files = ["public/template-daftar-tamu.xlsx"]
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/login"
+  to = "/.netlify/functions/api/login"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/logout"
+  to = "/.netlify/functions/api/logout"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
