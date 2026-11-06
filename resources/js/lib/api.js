@@ -11,7 +11,8 @@ export async function api(url, options = {}) {
         },
         ...options,
     });
-    const data = response.status === 204 ? null : await response.json();
+    const contentType = response.headers.get('content-type') || '';
+    const data = response.status === 204 ? null : contentType.includes('application/json') ? await response.json() : {message: 'Respons server tidak valid. Muat ulang halaman dan coba lagi.'};
 
     if (!response.ok) {
         throw new Error(data.message || Object.values(data.errors || {}).flat().join(' ') || 'Terjadi kesalahan.');

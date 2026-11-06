@@ -2,16 +2,22 @@ import {useEffect, useRef, useState} from 'react';
 import {Html5Qrcode} from 'html5-qrcode';
 import Shell from '../components/Shell';
 import {api, go} from '../lib/api';
+import {useEventSettings} from '../lib/event-settings';
 
 function ManualGuestSearch({onSelect}) {
     const [results, setResults] = useState([]);
     const [searched, setSearched] = useState(false);
     const [error, setError] = useState('');
+    const [query, setQuery] = useState('');
 
-    const search = async (event) => {
-        event.preventDefault();
-        const name = event.currentTarget.guest_name.value.trim();
-        if (name.length < 2) { setError('Masukkan minimal dua huruf nama tamu.'); return; }
+    const search = async (name) => {
+        name = name.trim();
+        if (!name) {
+            setResults([]);
+            setSearched(false);
+            setError('');
+            return;
+        }
         setError('');
         setSearched(true);
         try {
@@ -22,12 +28,33 @@ function ManualGuestSearch({onSelect}) {
         }
     };
 
+    const changeQuery = event => {
+        const value = event.target.value;
+        setQuery(value);
+        search(value);
+    };
+
     return <>
-        <form className="manual" onSubmit={search}><label>Cari nama tamu<input name="guest_name" placeholder="Ketik nama tamu" required/></label><button className="secondary">Cari tamu</button></form>
+        <div className="manual dropdown"><label>Cari nama tamu<input className="form-control" name="guest_name" value={query} onChange={changeQuery} placeholder="Ketik nama tamu" autoComplete="off"/></label>
+            {results.length > 0 && <div className="dropdown-menu show w-100 manual-results">{results.map(guest => <button className="dropdown-item" type="button" key={guest.id} onClick={() => onSelect(guest.qr_token)}><span>{guest.guest_name}</span><small>{guest.category}</small><i>→</i></button>)}</div>}
+        </div>
+        {!query.trim() && <p className="manual-hint">Ketik nama tamu, hasil akan muncul otomatis.</p>}
         {error && <div className="alert error">{error}</div>}
-        {results.length > 0 && <div className="manual-results">{results.map(guest => <button type="button" key={guest.id} onClick={() => onSelect(guest.qr_token)}><span>{guest.guest_name}</span><small>{guest.category}</small><i>→</i></button>)}</div>}
         {searched && results.length === 0 && !error && <p className="manual-empty">Nama tamu belum ditemukan. Coba nama lain.</p>}
     </>;
+}
+
+function ManualSearchModal({onClose, onSelect}) {
+    return <div className="checkin-modal-backdrop" role="dialog" aria-modal="true" aria-label="Cari nama tamu">
+        <div className="checkin-modal manual-search-modal">
+            <button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">×</button>
+            <div className="modal-flower">⌕</div>
+            <p className="eyebrow">Pencarian tamu</p>
+            <h2>Cari nama tamu</h2>
+            <p className="modal-meta">Ketik nama untuk melihat hasil secara langsung.</p>
+            <ManualGuestSearch onSelect={onSelect}/>
+        </div>
+    </div>;
 }
 
 function ReceptionSuccessModal({guest, secondsLeft, onClose}) {
@@ -37,11 +64,11 @@ function ReceptionSuccessModal({guest, secondsLeft, onClose}) {
     </div></div>;
 }
 
-function ReceptionConfirmModal({guest, onConfirm, onClose}) {
+function ReceptionConfirmModal({guest, onConfirm, onClose, busy}) {
     return <div className="checkin-modal-backdrop" role="dialog" aria-modal="true"><div className="checkin-modal">
-        <button className="modal-close" type="button" onClick={onClose} aria-label="Tutup">×</button>
+        <button className="modal-close" type="button" onClick={onClose} disabled={busy} aria-label="Tutup">×</button>
         <div className="modal-flower">✦</div><p className="eyebrow">Selamat datang</p><h2>{guest.guest_name}</h2><p className="modal-meta">{guest.category}</p>
-        <form onSubmit={onConfirm}><button className="modal-submit">✓ Konfirmasi kehadiran</button>{guest.status === 'Attended' && <p className="modal-note">Kehadiran Anda telah tercatat sebelumnya.</p>}</form>
+        <form onSubmit={onConfirm}><button className="modal-submit" disabled={busy}>{busy ? <><span className="loading-spinner"/>Mencatat kehadiran...</> : '✓ Konfirmasi kehadiran'}</button>{guest.status === 'Attended' && <p className="modal-note">Kehadiran Anda telah tercatat sebelumnya.</p>}</form>
     </div></div>;
 }
 
@@ -52,9 +79,12 @@ export default function Scanner() {
     const [message, setMessage] = useState('');
     const [error, setError] = useState('');
     const [running, setRunning] = useState(false);
+    const [cameraBusy, setCameraBusy] = useState(false);
+    const [checkinBusy, setCheckinBusy] = useState(false);
     const [authUser, setAuthUser] = useState(null);
     const [manualOpen, setManualOpen] = useState(false);
     const [secondsLeft, setSecondsLeft] = useState(5);
+    const settings = useEventSettings();
 
     useEffect(() => { api('/api/user').then(setAuthUser).catch(() => go('/login')); }, []);
 
@@ -85,6 +115,8 @@ export default function Scanner() {
     };
 
     const start = async () => {
+        if (cameraBusy || running) return;
+        setCameraBusy(true);
         setError('');
         const config = {fps: 10, aspectRatio: 1};
         const openCamera = async (camera) => {
@@ -111,18 +143,20 @@ export default function Scanner() {
                 else if (detail.includes('notreadable') || detail.includes('in use')) setError('Kamera sedang dipakai aplikasi lain. Tutup Zoom, WhatsApp, atau aplikasi Camera lalu coba lagi.');
                 else setError('Kamera tidak dapat dibuka. Pastikan halaman menggunakan HTTPS dan coba lagi.');
             }
-        }
+        } finally { setCameraBusy(false); }
     };
 
     const confirm = async (event) => {
         event.preventDefault();
+        if (checkinBusy) return;
+        setCheckinBusy(true);
         try {
             const result = await api('/api/check-in', {method: 'POST', body: JSON.stringify({qr_token: token})});
             setMessage(result.message);
             setGuest(result.guest);
         } catch (exception) {
             setError(exception.message);
-        }
+        } finally { setCheckinBusy(false); }
     };
 
     const closeReceptionModal = () => {
@@ -130,6 +164,11 @@ export default function Scanner() {
         setMessage('');
         setError('');
         setTimeout(() => start(), 160);
+    };
+
+    const selectManualGuest = code => {
+        setManualOpen(false);
+        lookup(code);
     };
 
     useEffect(() => {
@@ -143,8 +182,11 @@ export default function Scanner() {
     if (!authUser) return <div className="scanner-loading">Menyiapkan scanner...</div>;
 
     const manualSearch = <ManualGuestSearch onSelect={lookup}/>;
-    const adminContent = <Shell><header className="page-header"><div><p className="eyebrow">Penerimaan tamu</p><h1>Scanner QR</h1></div></header><section className="scanner-grid"><div className="panel"><div id="qr-reader" className="reader"></div><div className="form-actions"><button onClick={start} disabled={running}>Mulai kamera</button>{running && <button className="secondary" onClick={stop}>Hentikan</button>}</div>{manualSearch}</div><div className="panel">{error && <div className="alert error">{error}</div>}{guest ? <form className="checkin-card" onSubmit={confirm}><p className="eyebrow">Selamat datang</p><h2>{guest.guest_name}</h2><p>{guest.category}</p><button>Konfirmasi kehadiran</button></form> : <p className="muted">Silakan arahkan QR undangan Anda ke kamera.</p>}</div></section></Shell>;
-    if (authUser.role !== 'receptionist') return adminContent;
+    const adminContent = <Shell><header className="page-header"><div><p className="eyebrow">Penerimaan tamu</p><h1>Scanner QR</h1></div></header><section className="scanner-grid"><div className="panel"><div id="qr-reader" className="reader"></div><div className="form-actions"><button onClick={start} disabled={running || cameraBusy}>{cameraBusy ? <><span className="loading-spinner"/>Membuka kamera...</> : 'Mulai kamera'}</button>{running && <button className="secondary" onClick={stop}>Hentikan</button>}</div>{manualSearch}</div><div className="panel">{error && <div className="alert error">{error}</div>}{guest ? <form className="checkin-card" onSubmit={confirm}><p className="eyebrow">Selamat datang</p><h2>{guest.guest_name}</h2><p>{guest.category}</p><button disabled={checkinBusy}>{checkinBusy ? <><span className="loading-spinner"/>Mencatat...</> : 'Konfirmasi kehadiran'}</button></form> : <p className="muted">Silakan arahkan QR undangan Anda ke kamera.</p>}</div></section></Shell>;
+    if (authUser.role !== 'receptionist' && location.pathname !== '/reception/scanner') return adminContent;
 
-    return <div className="reception-scanner"><div className="scanner-aurora" aria-hidden="true"/><div className="scanner-sparkles" aria-hidden="true"><i>✦</i><i>✦</i><i>✦</i><i>✦</i><i>✦</i></div><button className="reception-back" onClick={() => go('/reception')}>← Kembali</button><button className="reception-logout" onClick={() => api('/logout', {method: 'POST'}).then(() => go('/login'))}>Keluar</button><div className="reception-content"><div className="scanner-live"><span/> Live guest check-in</div><p className="eyebrow">Raihan & Debby</p><h1>QR Code Scanner</h1><p className="scan-here">Silakan arahkan QR undangan Anda ke kamera</p><div className="scan-frame"><div id="qr-reader" className="reader reception-reader"></div><span className="scan-beam" aria-hidden="true"/><i className="corner top-left"/><i className="corner top-right"/><i className="corner bottom-left"/><i className="corner bottom-right"/></div><div className="scan-controls"><button onClick={start} disabled={running}>{running ? '● Kamera aktif' : '▣ Mulai scan'}</button>{running && <button className="secondary" onClick={stop}>Hentikan</button>}<button className="secondary" onClick={() => setManualOpen(value => !value)}>⌕ Cari nama tamu</button></div>{manualOpen && <div className="reception-manual">{manualSearch}</div>}<section className="reception-result">{!guest && <>{error && <div className="alert error">{error}</div>}<p className="muted">Silakan arahkan QR undangan Anda ke kamera.</p></>}</section></div>{guest && (message ? <ReceptionSuccessModal guest={guest} secondsLeft={secondsLeft} onClose={closeReceptionModal}/> : <ReceptionConfirmModal guest={guest} onConfirm={confirm} onClose={closeReceptionModal}/>)}</div>;
+    const scannerSparkles = [[5,9],[16,5],[28,15],[42,7],[58,12],[74,5],[89,14],[96,28],[7,31],[18,43],[31,28],[70,31],[84,42],[94,55],[4,62],[13,78],[26,91],[39,76],[62,88],[76,70],[90,82],[52,94],[48,35],[57,57]].map(([x, y], index) => ({
+        id: index, x: `${x}%`, y: `${y}%`, size: `${8 + (index % 4) * 4}px`, delay: `${-(index * .37)}s`, duration: `${3.6 + (index % 4) * .7}s`,
+    }));
+    return <div className="reception-scanner"><div className="scanner-aurora" aria-hidden="true"/><div className="scanner-sparkles scanner-sparkles-rich" aria-hidden="true">{scannerSparkles.map(star => <i key={star.id} style={{left: star.x, top: star.y, fontSize: star.size, animationDelay: star.delay, animationDuration: star.duration}}>✦</i>)}</div><button className="reception-back" onClick={() => go('/reception')}>← Kembali</button><button className="reception-logout" onClick={() => api('/logout', {method: 'POST'}).then(() => go('/login'))}>Keluar</button><div className="reception-content"><div className="scanner-live"><span/> Live guest check-in</div><p className="eyebrow">{settings.groom_name} &amp; {settings.bride_name}</p><h1>QR Code Scanner</h1><p className="scan-here">Silakan arahkan QR undangan Anda ke kamera</p><div className="scan-frame"><div id="qr-reader" className="reader reception-reader"></div><span className="scan-beam" aria-hidden="true"/><i className="corner top-left"/><i className="corner top-right"/><i className="corner bottom-left"/><i className="corner bottom-right"/></div><div className="scan-controls"><button onClick={start} disabled={running || cameraBusy}>{cameraBusy ? <><span className="loading-spinner"/>Membuka...</> : running ? '● Kamera aktif' : '▣ Mulai scan'}</button>{running && <button className="secondary" onClick={stop}>Hentikan</button>}<button className="secondary" onClick={() => setManualOpen(true)}>⌕ Cari nama tamu</button></div><section className="reception-result">{!guest && <>{error && <div className="alert error">{error}</div>}<p className="muted">Silakan arahkan QR undangan Anda ke kamera.</p></>}</section></div>{manualOpen && <ManualSearchModal onClose={() => setManualOpen(false)} onSelect={selectManualGuest}/>} {guest && (message ? <ReceptionSuccessModal guest={guest} secondsLeft={secondsLeft} onClose={closeReceptionModal}/> : <ReceptionConfirmModal guest={guest} onConfirm={confirm} onClose={closeReceptionModal} busy={checkinBusy}/>)}</div>;
 }

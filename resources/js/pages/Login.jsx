@@ -1,11 +1,13 @@
 import {useState} from 'react';
 import {api, go} from '../lib/api';
+import {useEventSettings} from '../lib/event-settings';
 
 export default function Login() {
     const [form, setForm] = useState({email: '', password: ''});
     const [role, setRole] = useState('receptionist');
     const [error, setError] = useState('');
     const [busy, setBusy] = useState(false);
+    const settings = useEventSettings();
     const selected = role === 'admin';
 
     const submit = async (event) => {
@@ -14,7 +16,7 @@ export default function Login() {
         setError('');
         try {
             const result = await api('/login', {method: 'POST', body: JSON.stringify(form)});
-            go(result.user.role === 'receptionist' ? '/reception' : '/');
+            go(result.user.role === 'receptionist' ? '/reception' : result.user.role === 'developer' ? '/developer' : '/');
         } catch (exception) {
             setError(exception.message);
         } finally {
@@ -24,7 +26,7 @@ export default function Login() {
 
     return <div className="login-page"><div className="login-layout">
         <section className="login-intro">
-            <p className="eyebrow">Raihan & Debby</p>
+            <p className="eyebrow">{settings.groom_name} &amp; {settings.bride_name}</p>
             <h1>Wedding<br/>Guestbook</h1>
             <p>Satu aplikasi untuk kelola undangan dan mencatat kedatangan tamu pada hari acara.</p>
             <div className="login-steps"><span>1. Kelola undangan</span><span>2. Bagikan QR unik</span><span>3. Scan saat tamu tiba</span></div>
