@@ -1,11 +1,13 @@
 [build]
-  command = "npm ci && npm run build"
+  # Vite is a development dependency but is required to generate dist during
+  # Netlify's build. Explicitly include it even when the build environment is
+  # configured for production.
+  command = "npm ci --include=dev && npm run build"
   publish = "dist"
   functions = "netlify/functions"
 
 [build.environment]
   NODE_VERSION = "22"
-  NODE_ENV = "production"
 
 [functions]
   included_files = ["public/template-daftar-tamu.xlsx"]
